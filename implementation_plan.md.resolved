@@ -1,0 +1,138 @@
+# Professional Proctoring System — Implementation Plan
+
+Build a remote proctoring feature for an Olympiad website. Contestants share camera + screen; Admin monitors all participants in a real-time grid with incident alerts.
+
+## User Review Required
+
+> [!IMPORTANT]
+> **LiveKit Credentials**: You will need a LiveKit server (self-hosted or cloud) with `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, and `LIVEKIT_URL`. These go into `.env.local`.
+
+> [!IMPORTANT]
+> **Firebase**: You will need a Firebase project with Firestore enabled. The client config values go into `.env.local`.
+
+> [!WARNING]
+> **Auth**: The plan uses a **lightweight role-based approach** (role sent in the token request body). For production, you'd integrate with NextAuth.js or Firebase Auth. Should I implement full auth now, or keep it simple with role-based token grants?
+
+## Proposed Changes
+
+### Scaffolding
+
+#### [NEW] Next.js 15 project (App Router, TypeScript, Tailwind CSS)
+Scaffold with `npx create-next-app@latest` using TypeScript + Tailwind + App Router.
+
+#### [NEW] [.env.example](file:///d:/github%20projects/emo-competition-app/.env.example)
+Template with all required env vars:
+```
+LIVEKIT_API_KEY=
+LIVEKIT_API_SECRET=
+LIVEKIT_URL=wss://your-livekit-server.example.com
+NEXT_PUBLIC_LIVEKIT_URL=wss://your-livekit-server.example.com
+NEXT_PUBLIC_FIREBASE_API_KEY=
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=
+NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=
+NEXT_PUBLIC_FIREBASE_APP_ID=
+```
+
+---
+
+### Core Infrastructure
+
+#### [NEW] [types/proctoring.ts](file:///d:/github%20projects/emo-competition-app/src/types/proctoring.ts)
+TypeScript interfaces for the Firestore data schema:
+- **Room** — `{ id, name, status, createdAt, adminId }`
+- **Participant** — `{ id, roomId, displayName, role, joinedAt, isScreenSharing, isCameraOn }`
+- **Incident** — `{ id, roomId, participantId, participantName, type, message, timestamp }`
+
+Incident types: `'tab-switch' | 'screen-share-stopped' | 'camera-off' | 'manual'`
+
+#### [NEW] [lib/firebase.ts](file:///d:/github%20projects/emo-competition-app/src/lib/firebase.ts)
+Initialize Firebase app & export Firestore `db` instance. Client-side only.
+
+#### [NEW] [lib/firestore.ts](file:///d:/github%20projects/emo-competition-app/src/lib/firestore.ts)
+Helper functions:
+- `logIncident(incident)` — add doc to `rooms/{roomId}/incidents`
+- `subscribeToIncidents(roomId, callback)` — `onSnapshot` listener
+
+---
+
+### Token Generation API
+
+#### [NEW] [app/api/livekit-token/route.ts](file:///d:/github%20projects/emo-competition-app/src/app/api/livekit-token/route.ts)
+POST endpoint accepting `{ roomName, participantName, role }`:
+- Uses `AccessToken` from `livekit-server-sdk`
+- **Contestant**: `canPublish: true`, `canSubscribe: false`, `canPublishSources: ['camera', 'screen_share']`
+- **Admin**: `canPublish: false`, `canSubscribe: true`, `roomAdmin: true`
+- Returns `{ token: string }`
+
+---
+
+### Contestant View
+
+#### [NEW] [components/proctoring/ContestantRoom.tsx](file:///d:/github%20projects/emo-competition-app/src/components/proctoring/ContestantRoom.tsx)
+`"use client"` component. Key behaviors:
+1. On mount → POST to `/api/livekit-token` to get token
+2. Connect to `<LiveKitRoom>` with `video={true}` (360p resolution constraint)
+3. Auto-request screen share via `localParticipant.setScreenShareEnabled(true)`
+4. **Screen share stop** → set `examLocked = true`, blur overlay on exam, log incident
+5. **`visibilitychange`** listener → if `document.hidden`, log `tab-switch` incident to Firestore
+6. Status indicators for camera/screen share status
+7. Exam content area (placeholder) that blurs when locked
+
+#### [NEW] [app/contestant/[roomName]/page.tsx](file:///d:/github%20projects/emo-competition-app/src/app/contestant/[roomName]/page.tsx)
+Page route that renders `<ContestantRoom>` with `roomName` from params.
+
+---
+
+### Admin Dashboard
+
+#### [NEW] [components/proctoring/ParticipantTile.tsx](file:///d:/github%20projects/emo-competition-app/src/components/proctoring/ParticipantTile.tsx)
+Single participant card:
+- Screen share track → main background `<VideoTrack>`
+- Camera track → small PiP overlay in corner `<VideoTrack>`
+- Name label + status indicators
+
+#### [NEW] [components/proctoring/AdminGrid.tsx](file:///d:/github%20projects/emo-competition-app/src/components/proctoring/AdminGrid.tsx)
+`"use client"` component:
+- `<LiveKitRoom>` with `manageSubscription={true}` (lazy subscriptions)
+- `useParticipants()` to list all remote participants
+- Responsive CSS grid (auto-fill, minmax 320px)
+- Maps participants to `<ParticipantTile>`
+
+#### [NEW] [components/proctoring/IncidentsSidebar.tsx](file:///d:/github%20projects/emo-competition-app/src/components/proctoring/IncidentsSidebar.tsx)
+`"use client"` component:
+- `onSnapshot` on `rooms/{roomId}/incidents` (ordered by timestamp desc)
+- Real-time scrolling list with severity-colored badges
+- Filter by incident type
+
+#### [NEW] [app/admin/[roomName]/page.tsx](file:///d:/github%20projects/emo-competition-app/src/app/admin/[roomName]/page.tsx)
+Page route: sidebar + grid layout. Fetches admin token and renders `<AdminGrid>` + `<IncidentsSidebar>`.
+
+---
+
+### Landing Page
+
+#### [MODIFY] [app/page.tsx](file:///d:/github%20projects/emo-competition-app/src/app/page.tsx)
+Simple landing with:
+- Room name input
+- "Join as Contestant" button → `/contestant/{roomName}`
+- "Join as Admin" button → `/admin/{roomName}`
+
+---
+
+## Verification Plan
+
+### Automated Checks
+1. **Build test**: `npm run build` — verify zero TypeScript errors and successful compilation
+2. **Dev server**: `npm run dev` — verify app starts without runtime errors
+
+### Browser Tests (via browser tool)
+1. Navigate to `http://localhost:3000` → verify landing page renders with room input + buttons
+2. Navigate to `/contestant/test-room` → verify contestant view attempts to connect (will show permission prompt or error without real LiveKit server, but UI must render)
+3. Navigate to `/admin/test-room` → verify admin dashboard layout renders with grid + sidebar
+
+### Manual Verification (by user)
+1. **With real LiveKit server**: Set `.env.local` with real credentials, open contestant view in one browser, admin in another → verify video streams appear in admin grid
+2. **Tab switch test**: Switch tabs while on contestant page → verify incident logged in Firestore
+3. **Screen share stop**: Stop screen share → verify exam UI blurs

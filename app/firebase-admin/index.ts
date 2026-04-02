@@ -1,0 +1,25 @@
+// initialize firebase admin sdk using modular imports
+import { cert, getApps, initializeApp } from "firebase-admin/app";
+import { getFirestore } from "firebase-admin/firestore";
+import { getAuth } from "firebase-admin/auth";
+import { getDatabase } from "firebase-admin/database";
+import { getStorage } from "firebase-admin/storage";
+const apps = getApps();
+const app = apps.length
+  ? apps[0]
+  : initializeApp({
+      projectId: "omcc-5f0b2",
+      credential: cert({
+        projectId: "omcc-5f0b2",
+        clientEmail:
+          "firebase-adminsdk-fbsvc@omcc-5f0b2.iam.gserviceaccount.com",
+        privateKey: process.env.firebaseKey,
+      }),
+      databaseURL:
+        "https://omcc-5f0b2-default-rtdb.europe-west1.firebasedatabase.app",
+      storageBucket: "omcc-5f0b2.firebasestorage.app",
+    });
+export const db = getFirestore(app, "main");
+export const auth = getAuth(app);
+export const realtimeDb = getDatabase(app);
+export const storage = getStorage(app).bucket();
