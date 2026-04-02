@@ -227,6 +227,7 @@ export default function ClientPage({
                   <Input
                     {...register("answer")}
                     type="number"
+                    step="any"
                     placeholder="Enter your numerical answer"
                     disabled={isLoading}
                     className="bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500 focus-visible:ring-primary/50"
