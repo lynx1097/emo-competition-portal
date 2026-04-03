@@ -6,33 +6,106 @@ import {
   type RemoteParticipant,
 } from "livekit-client";
 import ParticipantTile from "./ParticipantTile";
-import { Users, ChevronLeft, ChevronRight } from "lucide-react";
-import { useState } from "react";
+import {
+  Users,
+  ChevronLeft,
+  ChevronRight,
+  Megaphone,
+  X,
+  Send,
+} from "lucide-react";
+import { useState, useTransition } from "react";
 import { useParticipants, useTracks } from "@livekit/components-react";
+import {
+  blockStudent,
+  unblockStudent,
+  sendAnnouncement,
+  sendPrivateMessage,
+} from "@/app/server-actions/proctorActions";
 
-export default function AdminGrid() {
+export default function AdminGrid({
+  competitionId,
+}: {
+  competitionId: string;
+}) {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 8;
+
+  // Set of blocked participant identities (these are the student UIDs)
+  const [blockedIds, setBlockedIds] = useState<Set<string>>(new Set());
+
+  // Announcement modal state
+  const [showAnnouncement, setShowAnnouncement] = useState(false);
+  const [announcementText, setAnnouncementText] = useState("");
+
+  // Private message modal state
+  const [pmTarget, setPmTarget] = useState<{
+    identity: string;
+    name: string;
+  } | null>(null);
+  const [pmText, setPmText] = useState("");
+
+  const [isPending, startTransition] = useTransition();
+
   const remoteParticipants = useParticipants({});
   const studentParticipants: Participant[] = [];
   remoteParticipants.forEach((participant) => {
     if (
       participant.metadata &&
-      (JSON.parse(participant.metadata as string) as { role: string })?.role ===
-        "student" &&
+      (JSON.parse(participant.metadata as string) as { role: string })
+        ?.role === "student" &&
       (participant as RemoteParticipant).isActive
     ) {
       studentParticipants.push(participant);
     }
   });
-  // Calculate total pages
+
   const totalPages = Math.max(
     1,
     Math.ceil(studentParticipants.length / itemsPerPage),
   );
-  // Clamp current page to valid bounds
   const validCurrentPage = Math.min(currentPage, totalPages);
   const trackRefs = useTracks([Track.Source.Camera, Track.Source.ScreenShare]);
+
+  // ── Handlers ────────────────────────────────────────────────────────────────
+
+  const handleBlock = (participantIdentity: string) => {
+    startTransition(async () => {
+      const isCurrentlyBlocked = blockedIds.has(participantIdentity);
+      if (isCurrentlyBlocked) {
+        await unblockStudent(competitionId, participantIdentity);
+        setBlockedIds((prev) => {
+          const next = new Set(prev);
+          next.delete(participantIdentity);
+          return next;
+        });
+      } else {
+        await blockStudent(competitionId, participantIdentity);
+        setBlockedIds((prev) => new Set(prev).add(participantIdentity));
+      }
+    });
+  };
+
+  const handleSendAnnouncement = () => {
+    if (!announcementText.trim()) return;
+    startTransition(async () => {
+      await sendAnnouncement(competitionId, announcementText.trim());
+      setAnnouncementText("");
+      setShowAnnouncement(false);
+    });
+  };
+
+  const handleSendPrivateMessage = () => {
+    if (!pmText.trim() || !pmTarget) return;
+    startTransition(async () => {
+      await sendPrivateMessage(competitionId, pmTarget.identity, pmText.trim());
+      setPmText("");
+      setPmTarget(null);
+    });
+  };
+
+  // ── Empty state ──────────────────────────────────────────────────────────────
+
   if (studentParticipants.length === 0) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center text-gray-500 bg-gray-950 p-8 h-full">
@@ -51,53 +124,184 @@ export default function AdminGrid() {
     validCurrentPage * itemsPerPage,
   );
 
+  // ── Render ───────────────────────────────────────────────────────────────────
+
   return (
-    <div className="flex-1 flex flex-col overflow-y-auto bg-gray-950 p-6 h-full">
-      <div className="mb-6 flex items-center justify-between">
-        <h2 className="text-xl font-bold text-white flex items-center gap-2">
-          <Users className="w-5 h-5 text-blue-500" />
-          Active Contestants ({studentParticipants.length})
-        </h2>
-
-        {/* Pagination Controls */}
-        {studentParticipants.length > itemsPerPage && (
-          <div className="flex items-center gap-2 bg-gray-900 rounded-lg p-1.5 border border-gray-800">
-            <button
-              onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
-              disabled={validCurrentPage === 1}
-              className="flex items-center px-3 py-1.5 text-sm font-medium bg-gray-800 border border-gray-700 text-white hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-md transition-colors"
-            >
-              <ChevronLeft className="w-4 h-4 mr-1" />
-              Prev
-            </button>
-            <span className="text-sm font-medium text-gray-300 min-w-16 text-center">
-              {validCurrentPage} of {totalPages}
-            </span>
-            <button
-              onClick={() =>
-                setCurrentPage((prev) => Math.min(totalPages, prev + 1))
-              }
-              disabled={validCurrentPage === totalPages}
-              className="flex items-center px-3 py-1.5 text-sm font-medium bg-gray-800 border border-gray-700 text-white hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-md transition-colors"
-            >
-              Next
-              <ChevronRight className="w-4 h-4 ml-1" />
-            </button>
-          </div>
-        )}
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 auto-rows-max flex-1 content-start">
-        {paginatedParticipants.map((participant: Participant) => (
-          <ParticipantTile
-            key={participant.identity}
-            participant={participant}
-            trackRefs={trackRefs.filter(
-              (ref) => ref.participant.identity === participant.identity,
+    <>
+      <div className="flex-1 flex flex-col overflow-y-auto bg-gray-950 p-6 h-full">
+        {/* Header row */}
+        <div className="mb-6 flex items-center justify-between">
+          <h2 className="text-xl font-bold text-white flex items-center gap-2">
+            <Users className="w-5 h-5 text-blue-500" />
+            Active Contestants ({studentParticipants.length})
+            {blockedIds.size > 0 && (
+              <span className="ml-2 text-sm font-normal text-red-400">
+                ({blockedIds.size} blocked)
+              </span>
             )}
-          />
-        ))}
+          </h2>
+
+          <div className="flex items-center gap-3">
+            {/* Announcement button */}
+            <button
+              onClick={() => setShowAnnouncement(true)}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-sm font-semibold transition-colors"
+            >
+              <Megaphone className="w-4 h-4" />
+              Announce
+            </button>
+
+            {/* Pagination */}
+            {studentParticipants.length > itemsPerPage && (
+              <div className="flex items-center gap-2 bg-gray-900 rounded-lg p-1.5 border border-gray-800">
+                <button
+                  onClick={() =>
+                    setCurrentPage((prev) => Math.max(1, prev - 1))
+                  }
+                  disabled={validCurrentPage === 1}
+                  className="flex items-center px-3 py-1.5 text-sm font-medium bg-gray-800 border border-gray-700 text-white hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-md transition-colors"
+                >
+                  <ChevronLeft className="w-4 h-4 mr-1" />
+                  Prev
+                </button>
+                <span className="text-sm font-medium text-gray-300 min-w-16 text-center">
+                  {validCurrentPage} of {totalPages}
+                </span>
+                <button
+                  onClick={() =>
+                    setCurrentPage((prev) => Math.min(totalPages, prev + 1))
+                  }
+                  disabled={validCurrentPage === totalPages}
+                  className="flex items-center px-3 py-1.5 text-sm font-medium bg-gray-800 border border-gray-700 text-white hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-md transition-colors"
+                >
+                  Next
+                  <ChevronRight className="w-4 h-4 ml-1" />
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 auto-rows-max flex-1 content-start">
+          {paginatedParticipants.map((participant: Participant) => (
+            <ParticipantTile
+              key={participant.identity}
+              participant={participant}
+              trackRefs={trackRefs.filter(
+                (ref) => ref.participant.identity === participant.identity,
+              )}
+              isBlocked={blockedIds.has(participant.identity)}
+              onBlock={handleBlock}
+              onPrivateMessage={(identity, name) => {
+                setPmTarget({ identity, name });
+                setPmText("");
+              }}
+            />
+          ))}
+        </div>
       </div>
-    </div>
+
+      {/* ── Announcement Modal ───────────────────────────────────────────────── */}
+      {showAnnouncement && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-md shadow-2xl">
+            <div className="flex items-center justify-between p-5 border-b border-gray-800">
+              <div className="flex items-center gap-2 text-amber-400 font-bold text-lg">
+                <Megaphone className="w-5 h-5" />
+                Send Announcement
+              </div>
+              <button
+                onClick={() => setShowAnnouncement(false)}
+                className="text-gray-400 hover:text-white transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-5">
+              <p className="text-sm text-gray-400 mb-3">
+                This message will be visible to{" "}
+                <span className="text-white font-semibold">all students</span>{" "}
+                in the competition.
+              </p>
+              <textarea
+                value={announcementText}
+                onChange={(e) => setAnnouncementText(e.target.value)}
+                placeholder="Type your announcement..."
+                rows={4}
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500 resize-none"
+              />
+            </div>
+            <div className="flex gap-3 p-5 pt-0">
+              <button
+                onClick={() => setShowAnnouncement(false)}
+                className="flex-1 py-2.5 rounded-lg border border-gray-700 text-gray-300 hover:bg-gray-800 text-sm font-medium transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSendAnnouncement}
+                disabled={!announcementText.trim() || isPending}
+                className="flex-1 py-2.5 rounded-lg bg-amber-600 hover:bg-amber-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+              >
+                <Send className="w-4 h-4" />
+                Send to All
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Private Message Modal ────────────────────────────────────────────── */}
+      {pmTarget && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-md shadow-2xl">
+            <div className="flex items-center justify-between p-5 border-b border-gray-800">
+              <div className="flex items-center gap-2 text-blue-400 font-bold text-lg">
+                <Send className="w-5 h-5" />
+                Private Message
+              </div>
+              <button
+                onClick={() => setPmTarget(null)}
+                className="text-gray-400 hover:text-white transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-5">
+              <p className="text-sm text-gray-400 mb-3">
+                Sending privately to:{" "}
+                <span className="text-white font-semibold">
+                  {pmTarget.name}
+                </span>
+              </p>
+              <textarea
+                value={pmText}
+                onChange={(e) => setPmText(e.target.value)}
+                placeholder="Type your message..."
+                rows={4}
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 resize-none"
+              />
+            </div>
+            <div className="flex gap-3 p-5 pt-0">
+              <button
+                onClick={() => setPmTarget(null)}
+                className="flex-1 py-2.5 rounded-lg border border-gray-700 text-gray-300 hover:bg-gray-800 text-sm font-medium transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSendPrivateMessage}
+                disabled={!pmText.trim() || isPending}
+                className="flex-1 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+              >
+                <Send className="w-4 h-4" />
+                Send
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
