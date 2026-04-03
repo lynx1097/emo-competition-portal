@@ -146,34 +146,12 @@ export default function ClientPage({
       <div className="flex h-screen w-full overflow-hidden bg-zinc-950">
         {/* PDF Viewer — Left Panel */}
         <div className="flex-1 flex flex-col min-w-0">
-          <div className="flex items-center justify-between px-5 py-3 bg-zinc-900 border-b border-zinc-800">
-  <div className="flex items-center gap-2">
-    <FileText className="w-4 h-4 text-primary" />
-    <span className="text-sm font-semibold text-zinc-200">
-      Problem Sheet
-    </span>
-  </div>
-
-  <Button
-    variant="destructive"
-    onClick={() => {
-      const confirmExit = confirm(
-        "Are you sure you want to exit the exam? You may not be able to return."
-      );
-
-      if (!confirmExit) return;
-
-      setCameraStream(null);
-      setScreenStream(null);
-      updateLivekitToken("");
-      updateCompetitionId("");
-
-      router.push("/student");
-    }}
-  >
-    Exit Exam
-  </Button>
-</div>
+          <div className="flex items-center gap-2 px-5 py-3 bg-zinc-900 border-b border-zinc-800">
+            <FileText className="w-4 h-4 text-primary" />
+            <span className="text-sm font-semibold text-zinc-200">
+              Problem Sheet
+            </span>
+          </div>
           <iframe
             src={pdfUrl}
             className="flex-1 w-full border-none bg-zinc-900"
