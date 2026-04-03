@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   collection,
   onSnapshot,
@@ -30,19 +30,48 @@ export default function MessagesPanel({
   const [isOpen, setIsOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
 
-  useEffect(() => {
-    if (!uid) return;
+  // Ref so snapshot callbacks always have the latest accumulated messages
+  // without triggering re-subscription
+  const combinedRef = useRef<Record<string, Message>>({});
 
-    // Listen for announcements (recipientUid == null means all students)
-    const announcementQuery = query(
+  useEffect(() => {
+    if (!uid || !competitionId) return;
+
+    const merge = (
+      docs: { id: string; data: () => object }[],
+      isInitialLoad: boolean,
+    ) => {
+      docs.forEach((doc) => {
+        combinedRef.current[doc.id] = {
+          id: doc.id,
+          ...(doc.data() as Omit<Message, "id">),
+        };
+      });
+
+      const sorted = Object.values(combinedRef.current).sort((a, b) => {
+        const aTime = a.sentAt?.toMillis() ?? 0;
+        const bTime = b.sentAt?.toMillis() ?? 0;
+        return bTime - aTime;
+      });
+
+      setMessages(sorted);
+
+      // Only count as unread if these are new messages (not the initial load)
+      if (!isInitialLoad && docs.length > 0) {
+        setUnreadCount((prev) => prev + docs.length);
+      }
+    };
+
+    // Announcements
+    const annQuery = query(
       collection(db, "messages"),
       where("competitionId", "==", competitionId),
       where("type", "==", "announcement"),
       orderBy("sentAt", "desc"),
     );
 
-    // Listen for private messages addressed to this student
-    const privateQuery = query(
+    // Private messages to this specific student
+    const pmQuery = query(
       collection(db, "messages"),
       where("competitionId", "==", competitionId),
       where("type", "==", "private"),
@@ -50,39 +79,32 @@ export default function MessagesPanel({
       orderBy("sentAt", "desc"),
     );
 
-    const combined: Record<string, Message> = {};
+    let annInitialDone = false;
+    let pmInitialDone = false;
 
-    const updateMessages = () => {
-      const sorted = Object.values(combined).sort((a, b) => {
-        const aTime = a.sentAt?.toMillis() ?? 0;
-        const bTime = b.sentAt?.toMillis() ?? 0;
-        return bTime - aTime;
-      });
-      setMessages(sorted);
-      if (!isOpen) {
-        setUnreadCount((prev) => prev + 1);
-      }
-    };
-
-    const unsubAnn = onSnapshot(announcementQuery, (snap) => {
-      snap.docs.forEach((doc) => {
-        combined[doc.id] = { id: doc.id, ...(doc.data() as Omit<Message, "id">) };
-      });
-      updateMessages();
+    const unsubAnn = onSnapshot(annQuery, (snap) => {
+      const isInitial = !annInitialDone;
+      annInitialDone = true;
+      const docs = isInitial
+        ? snap.docs
+        : snap.docChanges().filter((c) => c.type === "added").map((c) => c.doc);
+      if (docs.length) merge(docs, isInitial);
     });
 
-    const unsubPm = onSnapshot(privateQuery, (snap) => {
-      snap.docs.forEach((doc) => {
-        combined[doc.id] = { id: doc.id, ...(doc.data() as Omit<Message, "id">) };
-      });
-      updateMessages();
+    const unsubPm = onSnapshot(pmQuery, (snap) => {
+      const isInitial = !pmInitialDone;
+      pmInitialDone = true;
+      const docs = isInitial
+        ? snap.docs
+        : snap.docChanges().filter((c) => c.type === "added").map((c) => c.doc);
+      if (docs.length) merge(docs, isInitial);
     });
 
     return () => {
       unsubAnn();
       unsubPm();
+      combinedRef.current = {};
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [competitionId, uid]);
 
   const handleOpen = () => {
@@ -92,7 +114,7 @@ export default function MessagesPanel({
 
   return (
     <>
-      {/* Floating button */}
+      {/* Floating bell button */}
       <button
         onClick={handleOpen}
         className="fixed bottom-6 left-6 z-50 flex items-center gap-2 px-4 py-3 rounded-full bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-900/40 transition-colors"
@@ -100,17 +122,16 @@ export default function MessagesPanel({
         <Bell className="w-5 h-5" />
         <span className="text-sm font-semibold">Messages</span>
         {unreadCount > 0 && (
-          <span className="ml-1 bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">
+          <span className="ml-1 bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full animate-pulse">
             {unreadCount}
           </span>
         )}
       </button>
 
-      {/* Slide-in panel */}
+      {/* Panel */}
       {isOpen && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:justify-end p-4 bg-black/40 backdrop-blur-sm">
           <div className="bg-zinc-900 border border-zinc-700 rounded-2xl w-full max-w-sm shadow-2xl flex flex-col max-h-[70vh]">
-            {/* Header */}
             <div className="flex items-center justify-between p-4 border-b border-zinc-800">
               <div className="flex items-center gap-2 text-white font-bold">
                 <MessageSquare className="w-5 h-5 text-blue-400" />
@@ -124,7 +145,6 @@ export default function MessagesPanel({
               </button>
             </div>
 
-            {/* Messages list */}
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
               {messages.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 text-zinc-500">
