@@ -132,7 +132,7 @@ export default function ClientPage({
       unsub();
       compUnSub();
     };
-  }, [user]);
+  }, [competitionId, user]);
 
   const router = useRouter();
   const {
