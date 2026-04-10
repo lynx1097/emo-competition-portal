@@ -9,11 +9,13 @@ import { Calendar, MapPin, Users, Clock } from "lucide-react";
 interface CompetitionCardProps {
   competition: Competition;
   isJoined: boolean;
+  isBlocked: boolean;
 }
 
 export function CompetitionCard({
   competition,
   isJoined,
+  isBlocked,
 }: CompetitionCardProps) {
   const startDate = new Date(competition.startDate as string);
   const endDate = new Date(competition.endDate as string);
@@ -109,6 +111,7 @@ export function CompetitionCard({
           competitionId={competition.id!}
           isJoined={isJoined}
           status={competition.status}
+          isBlocked={isBlocked}
         />
       </CardContent>
     </Card>

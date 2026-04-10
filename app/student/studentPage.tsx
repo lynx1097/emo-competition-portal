@@ -9,9 +9,11 @@ import ViewMedia from "./ViewMedia";
 export default function StudentPage({
   registrations,
   competitions,
+  blockedCompetitions,
 }: {
   registrations: Registration[];
   competitions: Competition[];
+  blockedCompetitions: { competitionId: string; studentUid: string }[];
 }) {
   return (
     <div className="min-h-screen bg-background p-4 md:p-8">
@@ -39,6 +41,11 @@ export default function StudentPage({
                 key={competition.id}
                 competition={competition}
                 isJoined={false}
+                isBlocked={Boolean(
+                  blockedCompetitions.find(
+                    (blocked) => blocked.competitionId === competition.id,
+                  ),
+                )}
               />
             ))}
           </div>

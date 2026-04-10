@@ -145,7 +145,7 @@ export default function ClientPage({
   // ── Manual Exit Handler ───────────────────────────────────────────────────
   const handleExitExam = () => {
     const confirmExit = window.confirm(
-      "Are you sure you want to exit the exam? You won't have another chance to enter the exam."
+      "Are you sure you want to exit the exam? You won't have another chance to enter the exam.",
     );
     if (confirmExit) {
       router.push("/student");
@@ -346,7 +346,7 @@ export default function ClientPage({
       </div>
 
       {/* ── Blocked overlay ────────────────────────────────────────────────────── */}
-      {isBlocked && (
+      {isBlocked ? (
         <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex flex-col items-center justify-center text-white">
           <div className="bg-red-500/10 border border-red-500/40 rounded-2xl p-8 max-w-md text-center">
             <Ban className="w-16 h-16 text-red-500 mx-auto mb-4" />
@@ -356,8 +356,18 @@ export default function ClientPage({
               Please wait or contact the proctor for assistance.
             </p>
           </div>
+          <div className="p-5 border-t border-zinc-800">
+            <Button
+              type="button"
+              onClick={handleExitExam}
+              className="w-full bg-red-500/10 text-red-500 hover:bg-red-500/20 hover:text-red-400 border border-red-500/20 transition-colors"
+            >
+              <LogOut className="w-4 h-4 mr-2" />
+              Exit Exam
+            </Button>
+          </div>
         </div>
-      )}
+      ) : null}
 
       {/* ── Messages floating panel ────────────────────────────────────────────── */}
       {user?.uid && (

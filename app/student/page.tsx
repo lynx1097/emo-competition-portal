@@ -64,11 +64,23 @@ export default async function page() {
         endDate: (data.endDate as Timestamp).toDate().toString(),
       };
     });
-
+  const blockedCompetitions = (
+    await db
+      .collection("blockedStudents")
+      .where("studentUid", "==", user.uid)
+      .get()
+  ).docs.map((doc) => {
+    const blockingData = doc.data();
+    return {
+      competitionId: blockingData.competitionId,
+      studentUid: blockingData.studentUid,
+    };
+  });
   return (
     <StudentPage
       registrations={pendingRegistrations}
       competitions={competitionsData}
+      blockedCompetitions={blockedCompetitions}
     />
   );
 }
