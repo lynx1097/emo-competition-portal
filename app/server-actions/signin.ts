@@ -11,7 +11,7 @@ export async function signin(jwt: string) {
       httpOnly: true,
       maxAge: expiresIn,
       secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
+      sameSite: "none",
     });
     console.log("signIn action");
   } catch (error) {
